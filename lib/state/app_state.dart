@@ -5,9 +5,12 @@ import 'package:uuid/v4.dart';
 
 import 'package:futegestor/models/models.dart';
 import 'package:futegestor/storage/local_storage.dart';
+import 'package:futegestor/services/notification_service.dart';
+import 'package:futegestor/services/team_balancer.dart';
 
 class AppState extends ChangeNotifier {
   final _storage = LocalStorage.instance;
+  final _notificationService = NotificationService.instance;
 
   // Data
   final Map<String, Player> _playersById = {};
@@ -85,10 +88,25 @@ class AppState extends ChangeNotifier {
   Player addPlayer(String name, {Position? position, SkillLevel? level}) {
     final p = Player(id: _id(), name: name, position: position, level: level);
     _playersById[p.id] = p;
-    _arrivalOrder.add(p.id);
     _persistAll();
     notifyListeners();
     return p;
+  }
+
+  /// Add an existing player to the arrival queue
+  void addPlayerToArrival(String playerId) {
+    if (!_playersById.containsKey(playerId)) return;
+    if (_arrivalOrder.contains(playerId)) return;
+    _arrivalOrder.add(playerId);
+    _persistAll();
+    notifyListeners();
+  }
+
+  /// Remove player from arrival queue (not from registry)
+  void removePlayerFromArrival(String playerId) {
+    _arrivalOrder.removeWhere((id) => id == playerId);
+    _persistAll();
+    notifyListeners();
   }
 
   void editPlayer(String id, {String? name, Position? position, SkillLevel? level}) {
@@ -168,24 +186,70 @@ class AppState extends ChangeNotifier {
   bool get hasMinPlayers => _arrivalOrder.length >= settings.minPlayersToStart;
 
   // MATCH
-  void startMatch() {
-    if (!hasMinPlayers) return;
+  void startMatch({bool useBalancedTeams = false}) {
+    if (!hasMinPlayers) {
+      throw StateError('Not enough players to start a match');
+    }
+    if (currentMatch != null) {
+      throw StateError('A match is already in progress');
+    }
+
     final perTeam = settings.playersPerTeam;
-    final a = _arrivalOrder.take(perTeam).toList();
-    final b = _arrivalOrder.skip(perTeam).take(perTeam).toList();
-    currentMatch = MatchModel(
-      id: _id(),
-      createdAt: DateTime.now(),
-      teamA: a,
-      teamB: b,
-      durationMinutes: settings.matchMinutes,
-      status: MatchStatus.emAndamento,
-      startTime: DateTime.now(),
-    );
-    // Remaining form queue (not strictly needed now, can be generated on queue screen)
-    _startTimer();
-    _persistAll();
-    notifyListeners();
+    final totalPlayers = perTeam * 2;
+
+    List<String> teamAIds;
+    List<String> teamBIds;
+
+    try {
+      if (useBalancedTeams && settings.drawModeActive) {
+        // Use balanced teams based on skill and position
+        final selectedPlayers = _arrivalOrder
+            .take(totalPlayers)
+            .map((id) => _playersById[id])
+            .whereType<Player>()
+            .toList();
+
+        if (selectedPlayers.length < totalPlayers) {
+          throw StateError('Some players in the queue no longer exist');
+        }
+
+        final balanced = settings.drawCriterion == 'posicao'
+            ? TeamBalancer.balanceTeamsWithPositions(
+                players: selectedPlayers,
+                playersPerTeam: perTeam,
+              )
+            : TeamBalancer.balanceTeams(
+                players: selectedPlayers,
+                playersPerTeam: perTeam,
+              );
+
+        teamAIds = balanced.teamA.map((p) => p.id).toList();
+        teamBIds = balanced.teamB.map((p) => p.id).toList();
+      } else {
+        // Use arrival order
+        teamAIds = _arrivalOrder.take(perTeam).toList();
+        teamBIds = _arrivalOrder.skip(perTeam).take(perTeam).toList();
+      }
+
+      currentMatch = MatchModel(
+        id: _id(),
+        createdAt: DateTime.now(),
+        teamA: teamAIds,
+        teamB: teamBIds,
+        durationMinutes: settings.matchMinutes,
+        status: MatchStatus.emAndamento,
+        startTime: DateTime.now(),
+      );
+      _startTimer();
+      _persistAll();
+      notifyListeners();
+    } catch (e) {
+      // Log error and rethrow
+      if (kDebugMode) {
+        print('Error starting match: $e');
+      }
+      rethrow;
+    }
   }
 
   void _startTimer() {
@@ -282,8 +346,60 @@ class AppState extends ChangeNotifier {
     currentMatch!
       ..status = MatchStatus.finalizada
       ..endTime = DateTime.now();
+
+    // Send notification
+    _notificationService.showMatchEndNotification(
+      durationMinutes: currentMatch!.elapsedSeconds ~/ 60,
+      teamAScore: '${currentMatch!.scoreA}',
+      teamBScore: '${currentMatch!.scoreB}',
+    );
+
     _history.insert(0, currentMatch!);
     currentMatch = null;
+    _persistAll();
+    notifyListeners();
+  }
+
+  /// Prepare next match with player rotation
+  /// Returns the teams for the next match (teamA, teamB, waitingPlayers)
+  ({List<String> teamA, List<String> teamB, List<String> waiting})? prepareNextMatch() {
+    if (!hasMinPlayers) return null;
+
+    final perTeam = settings.playersPerTeam;
+    final totalNeeded = perTeam * 2;
+
+    if (_arrivalOrder.length < totalNeeded) return null;
+
+    // Rotate: players who just finished playing go to the end of the queue
+    final lastMatch = _history.isNotEmpty ? _history.first : null;
+    if (lastMatch != null) {
+      final playersWhoPlayed = [...lastMatch.teamA, ...lastMatch.teamB];
+      // Remove players who played from their current positions
+      _arrivalOrder.removeWhere((id) => playersWhoPlayed.contains(id));
+      // Add them back to the end
+      _arrivalOrder.addAll(playersWhoPlayed);
+    }
+
+    // Select next teams
+    final teamA = _arrivalOrder.take(perTeam).toList();
+    final teamB = _arrivalOrder.skip(perTeam).take(perTeam).toList();
+    final waiting = _arrivalOrder.skip(totalNeeded).toList();
+
+    return (teamA: teamA, teamB: teamB, waiting: waiting);
+  }
+
+  /// Start match with specific teams (for rotation)
+  void startMatchWithTeams(List<String> teamA, List<String> teamB) {
+    currentMatch = MatchModel(
+      id: _id(),
+      createdAt: DateTime.now(),
+      teamA: teamA,
+      teamB: teamB,
+      durationMinutes: settings.matchMinutes,
+      status: MatchStatus.emAndamento,
+      startTime: DateTime.now(),
+    );
+    _startTimer();
     _persistAll();
     notifyListeners();
   }

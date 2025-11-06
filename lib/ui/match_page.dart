@@ -59,7 +59,7 @@ class MatchPage extends StatelessWidget {
                       child: FilledButton.icon(
                         icon: const Icon(Icons.flag),
                         label: const Text('Finalizar Partida'),
-                        onPressed: () => state.finalizeMatch(),
+                        onPressed: () => _showFinalizeDialog(context),
                       ),
                     ),
                   ),
@@ -439,6 +439,103 @@ void _openAddPlayerToTeam(BuildContext context, String team) {
                 Navigator.pop(context);
               },
             )),
+      ],
+    ),
+  );
+}
+
+void _showFinalizeDialog(BuildContext context) {
+  final state = context.appRead();
+
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Finalizar Partida'),
+      content: const Text('Deseja encerrar a partida atual e iniciar a próxima?'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: () {
+            state.finalizeMatch();
+            Navigator.pop(ctx);
+
+            // Check if we can start next match
+            final nextMatch = state.prepareNextMatch();
+            if (nextMatch != null) {
+              _showNextMatchDialog(context, nextMatch);
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Partida finalizada! Não há jogadores suficientes para a próxima.')),
+              );
+            }
+          },
+          child: const Text('Finalizar'),
+        ),
+      ],
+    ),
+  );
+}
+
+void _showNextMatchDialog(
+  BuildContext context,
+  ({List<String> teamA, List<String> teamB, List<String> waiting}) nextMatch,
+) {
+  final state = context.appRead();
+  final playersMap = {for (final p in state.players) p.id: p};
+
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Próxima Partida'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Times da próxima partida:', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            Text('Time A:', style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary)),
+            ...nextMatch.teamA.map((id) => Padding(
+              padding: const EdgeInsets.only(left: 8, top: 4),
+              child: Text('• ${playersMap[id]?.name ?? 'Desconhecido'}'),
+            )),
+            const SizedBox(height: 12),
+            Text('Time B:', style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.secondary)),
+            ...nextMatch.teamB.map((id) => Padding(
+              padding: const EdgeInsets.only(left: 8, top: 4),
+              child: Text('• ${playersMap[id]?.name ?? 'Desconhecido'}'),
+            )),
+            if (nextMatch.waiting.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              const Text('Aguardando:', style: TextStyle(fontWeight: FontWeight.bold)),
+              ...nextMatch.waiting.map((id) => Padding(
+                padding: const EdgeInsets.only(left: 8, top: 4),
+                child: Text('• ${playersMap[id]?.name ?? 'Desconhecido'}'),
+              )),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Não Iniciar'),
+        ),
+        FilledButton(
+          onPressed: () {
+            state.startMatchWithTeams(nextMatch.teamA, nextMatch.teamB);
+            Navigator.pop(ctx);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Nova partida iniciada!')),
+            );
+          },
+          child: const Text('Iniciar Partida'),
+        ),
       ],
     ),
   );

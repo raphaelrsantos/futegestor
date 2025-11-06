@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:futegestor/theme.dart';
 import 'package:futegestor/storage/local_storage.dart';
+import 'package:futegestor/services/notification_service.dart';
 
 import 'package:futegestor/state/app_state.dart';
 import 'package:futegestor/state/app_state_scope.dart';
@@ -16,8 +17,14 @@ Future<void> _bootstrap() async {
   // ignore: avoid_print
   print('Bootstrap: initializing LocalStorage...');
   await LocalStorage.init();
+
+  // Initialize notifications
   // ignore: avoid_print
-  print('Bootstrap: LocalStorage initialized. Running app.');
+  print('Bootstrap: initializing NotificationService...');
+  await NotificationService.instance.initialize();
+
+  // ignore: avoid_print
+  print('Bootstrap: Services initialized. Running app.');
   runApp(const MyApp());
 }
 
