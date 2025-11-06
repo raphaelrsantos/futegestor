@@ -199,6 +199,9 @@ class _TeamColumn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.appRead();
+    final perTeam = state.settings.playersPerTeam;
+    final hasVacancy = playerIds.length < perTeam;
+    
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(8),
@@ -209,11 +212,12 @@ class _TeamColumn extends StatelessWidget {
               children: [
                 Text(teamLabel, style: Theme.of(context).textTheme.titleLarge),
                 const Spacer(),
-                IconButton(
-                  tooltip: 'Adicionar jogador',
-                  onPressed: () => _openAddPlayerToTeam(context, team),
-                  icon: const Icon(Icons.person_add),
-                ),
+                if (hasVacancy)
+                  IconButton(
+                    tooltip: 'Adicionar jogador',
+                    onPressed: () => _openAddPlayerToTeam(context, team),
+                    icon: const Icon(Icons.person_add),
+                  ),
               ],
             ),
             const SizedBox(height: 8),
@@ -448,16 +452,34 @@ Future<void> _openGoalDialog(
 
 void _openAddPlayerToTeam(BuildContext context, String team) {
   final state = context.appRead();
-  final all = state.players;
+  final match = state.currentMatch;
+  
+  if (match == null) return;
+  
+  // Get waiting players only (not in active teams)
+  final activePlayers = {...match.teamA, ...match.teamB};
+  final waitingPlayers = state.arrivalOrder
+      .where((id) => !activePlayers.contains(id))
+      .map((id) => state.players.firstWhere((p) => p.id == id))
+      .toList();
+  
+  if (waitingPlayers.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Não há jogadores na lista de espera')),
+    );
+    return;
+  }
+  
   showModalBottomSheet(
     context: context,
     builder: (_) => ListView(
       padding: const EdgeInsets.all(12),
       children: [
-        Text('Adicionar ao $team', style: Theme.of(context).textTheme.titleLarge),
+        Text('Adicionar ao Time $team', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 8),
-        ...all.map((p) => ListTile(
+        ...waitingPlayers.map((p) => ListTile(
               title: Text(p.name),
+              subtitle: Text('${p.position?.name ?? ''} • ${p.level?.name ?? ''}'),
               onTap: () {
                 state.addToTeam(team, p.id);
                 Navigator.pop(context);

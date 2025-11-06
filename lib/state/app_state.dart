@@ -348,7 +348,14 @@ class AppState extends ChangeNotifier {
     if (currentMatch == null) return;
     final list = team == 'A' ? currentMatch!.teamA : currentMatch!.teamB;
     if (index < 0 || index >= list.length) return;
-    list.removeAt(index);
+    final playerId = list.removeAt(index);
+    
+    // Remove player from current position in arrival order (if exists)
+    _arrivalOrder.removeWhere((id) => id == playerId);
+    
+    // Add player to the end of waiting list (final do último time)
+    _arrivalOrder.add(playerId);
+    
     _persistAll();
     notifyListeners();
   }
@@ -356,7 +363,9 @@ class AppState extends ChangeNotifier {
   void addToTeam(String team, String playerId) {
     if (currentMatch == null) return;
     final list = team == 'A' ? currentMatch!.teamA : currentMatch!.teamB;
-    if (!list.contains(playerId)) list.add(playerId);
+    if (!list.contains(playerId)) {
+      list.add(playerId);
+    }
     _persistAll();
     notifyListeners();
   }
@@ -446,17 +455,18 @@ class AppState extends ChangeNotifier {
       winnerIsTeamA = false;
     }
 
-    // Remove players who played from arrival queue
-    final playersWhoPlayed = [...lastMatch.teamA, ...lastMatch.teamB];
-    _arrivalOrder.removeWhere((id) => playersWhoPlayed.contains(id));
+    // Remove only losing team from arrival queue (winners stay in their original position)
+    _arrivalOrder.removeWhere((id) => losingTeam.contains(id));
 
-    // Build new team from waiting players
+    // Build new team from waiting players (exclude winners from the waiting list)
     List<String> newTeam = [];
-    final waitingPlayers = List<String>.from(_arrivalOrder);
+    final waitingPlayers = _arrivalOrder
+        .where((id) => !winningTeam.contains(id))
+        .toList();
 
     // Take players from waiting list
-    for (int i = 0; i < perTeam && waitingPlayers.isNotEmpty; i++) {
-      newTeam.add(waitingPlayers.removeAt(0));
+    for (int i = 0; i < perTeam && i < waitingPlayers.length; i++) {
+      newTeam.add(waitingPlayers[i]);
     }
 
     // If not enough waiting players, fill with players from losing team (in order)
