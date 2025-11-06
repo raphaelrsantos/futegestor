@@ -94,29 +94,34 @@ class _SettingsPageState extends State<SettingsPage> {
               ],
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    initialValue: _settings.minPlayersToStart.toString(),
-                    decoration: const InputDecoration(labelText: 'Mínimo para iniciar'),
-                    keyboardType: TextInputType.number,
-                    onChanged: (v) => _settings.minPlayersToStart = int.tryParse(v) ?? _settings.minPlayersToStart,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    value: _settings.tiebreaker,
-                    decoration: const InputDecoration(labelText: 'Critério de desempate'),
-                    items: const [
-                      DropdownMenuItem(value: 'mais_gols', child: Text('Quem marcou mais gols')),
-                      DropdownMenuItem(value: 'primeiro_gol', child: Text('Quem marcou primeiro')),
-                    ],
-                    onChanged: (v) => setState(() => _settings.tiebreaker = v ?? 'mais_gols'),
-                  ),
-                ),
+            DropdownButtonFormField<String>(
+              value: _settings.tiebreaker,
+              decoration: const InputDecoration(labelText: 'Critério de desempate'),
+              items: const [
+                DropdownMenuItem(value: 'mais_gols', child: Text('Quem marcou mais gols')),
+                DropdownMenuItem(value: 'primeiro_gol', child: Text('Quem marcou primeiro')),
               ],
+              onChanged: (v) => setState(() => _settings.tiebreaker = v ?? 'mais_gols'),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceVariant,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, size: 20, color: Theme.of(context).colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Mínimo para iniciar: ${_settings.minPlayersToStart} jogadores (${_settings.playersPerTeam} por time)',
+                      style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 12),
             SwitchListTile(

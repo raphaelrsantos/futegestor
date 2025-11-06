@@ -95,54 +95,92 @@ class ArrivalPage extends StatelessWidget {
             SafeArea(
               child: Column(
                 children: [
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      icon: const Icon(Icons.play_arrow),
-                      label: Text('Iniciar Jogo (${arrival.length}/${settings.minPlayersToStart})'),
-                      onPressed: state.hasMinPlayers
-                          ? () {
-                              try {
-                                state.startMatch();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Partida iniciada!')),
-                                );
-                              } catch (e) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Erro ao iniciar partida: $e'),
-                                    backgroundColor: Theme.of(context).colorScheme.error,
-                                  ),
-                                );
-                              }
-                            }
-                          : null,
-                    ),
-                  ),
-                  if (settings.drawModeActive) ...[
-                    const SizedBox(height: 8),
+                  // Prepare Teams Buttons
+                  if (!state.hasTeamsPrepared) ...[
                     SizedBox(
                       width: double.infinity,
-                      child: OutlinedButton.icon(
-                        icon: const Icon(Icons.balance),
-                        label: const Text('Iniciar com Times Balanceados'),
+                      child: FilledButton.icon(
+                        icon: const Icon(Icons.groups),
+                        label: Text('Montar Times (${arrival.length}/${settings.minPlayersToStart})'),
                         onPressed: state.hasMinPlayers
                             ? () {
                                 try {
-                                  state.startMatch(useBalancedTeams: true);
+                                  state.prepareTeams(useBalancedTeams: false);
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Partida iniciada com times balanceados!')),
+                                    const SnackBar(content: Text('Times montados! Vá para a aba Partida para iniciar.')),
                                   );
                                 } catch (e) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                      content: Text('Erro ao balancear times: $e'),
+                                      content: Text('Erro ao montar times: $e'),
                                       backgroundColor: Theme.of(context).colorScheme.error,
                                     ),
                                   );
                                 }
                               }
                             : null,
+                      ),
+                    ),
+                    if (settings.drawModeActive) ...[
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.balance),
+                          label: const Text('Montar Times Balanceados'),
+                          onPressed: state.hasMinPlayers
+                              ? () {
+                                  try {
+                                    state.prepareTeams(useBalancedTeams: true);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Times balanceados montados! Vá para a aba Partida.')),
+                                    );
+                                  } catch (e) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Erro ao balancear times: $e'),
+                                        backgroundColor: Theme.of(context).colorScheme.error,
+                                      ),
+                                    );
+                                  }
+                                }
+                              : null,
+                        ),
+                      ),
+                    ],
+                  ] else ...[
+                    // Teams already prepared
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Times prontos! Vá para a aba Partida para iniciar.',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Refazer Times'),
+                        onPressed: () {
+                          state.clearPreparedTeams();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Times desmontados. Monte novamente.')),
+                          );
+                        },
                       ),
                     ),
                   ],

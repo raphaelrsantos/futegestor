@@ -20,6 +20,11 @@ class AppState extends ChangeNotifier {
   MatchModel? currentMatch;
   final List<MatchModel> _history = [];
 
+  // Prepared teams (preview before starting match)
+  List<String>? preparedTeamA;
+  List<String>? preparedTeamB;
+  bool get hasTeamsPrepared => preparedTeamA != null && preparedTeamB != null;
+
   // Timer
   Timer? _timer;
   bool get timerRunning => _timer != null;
@@ -185,20 +190,15 @@ class AppState extends ChangeNotifier {
 
   bool get hasMinPlayers => _arrivalOrder.length >= settings.minPlayersToStart;
 
-  // MATCH
-  void startMatch({bool useBalancedTeams = false}) {
+  // MATCH PREPARATION
+  /// Prepare teams based on settings (arrival order or balanced)
+  void prepareTeams({bool useBalancedTeams = false}) {
     if (!hasMinPlayers) {
-      throw StateError('Not enough players to start a match');
-    }
-    if (currentMatch != null) {
-      throw StateError('A match is already in progress');
+      throw StateError('Not enough players to prepare teams');
     }
 
     final perTeam = settings.playersPerTeam;
     final totalPlayers = perTeam * 2;
-
-    List<String> teamAIds;
-    List<String> teamBIds;
 
     try {
       if (useBalancedTeams && settings.drawModeActive) {
@@ -223,28 +223,59 @@ class AppState extends ChangeNotifier {
                 playersPerTeam: perTeam,
               );
 
-        teamAIds = balanced.teamA.map((p) => p.id).toList();
-        teamBIds = balanced.teamB.map((p) => p.id).toList();
+        preparedTeamA = balanced.teamA.map((p) => p.id).toList();
+        preparedTeamB = balanced.teamB.map((p) => p.id).toList();
       } else {
         // Use arrival order
-        teamAIds = _arrivalOrder.take(perTeam).toList();
-        teamBIds = _arrivalOrder.skip(perTeam).take(perTeam).toList();
+        preparedTeamA = _arrivalOrder.take(perTeam).toList();
+        preparedTeamB = _arrivalOrder.skip(perTeam).take(perTeam).toList();
       }
 
+      notifyListeners();
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error preparing teams: $e');
+      }
+      rethrow;
+    }
+  }
+
+  /// Clear prepared teams
+  void clearPreparedTeams() {
+    preparedTeamA = null;
+    preparedTeamB = null;
+    notifyListeners();
+  }
+
+  // MATCH
+  /// Start match with prepared teams
+  void startMatch() {
+    if (!hasTeamsPrepared) {
+      throw StateError('Teams must be prepared before starting a match');
+    }
+    if (currentMatch != null) {
+      throw StateError('A match is already in progress');
+    }
+
+    try {
       currentMatch = MatchModel(
         id: _id(),
         createdAt: DateTime.now(),
-        teamA: teamAIds,
-        teamB: teamBIds,
+        teamA: List.from(preparedTeamA!),
+        teamB: List.from(preparedTeamB!),
         durationMinutes: settings.matchMinutes,
         status: MatchStatus.emAndamento,
         startTime: DateTime.now(),
       );
+
+      // Clear prepared teams after starting
+      preparedTeamA = null;
+      preparedTeamB = null;
+
       _startTimer();
       _persistAll();
       notifyListeners();
     } catch (e) {
-      // Log error and rethrow
       if (kDebugMode) {
         print('Error starting match: $e');
       }
@@ -362,6 +393,7 @@ class AppState extends ChangeNotifier {
 
   /// Prepare next match with player rotation
   /// Returns the teams for the next match (teamA, teamB, waitingPlayers)
+  /// Winning team stays, losing team is replaced by waiting players
   ({List<String> teamA, List<String> teamB, List<String> waiting})? prepareNextMatch() {
     if (!hasMinPlayers) return null;
 
@@ -370,22 +402,75 @@ class AppState extends ChangeNotifier {
 
     if (_arrivalOrder.length < totalNeeded) return null;
 
-    // Rotate: players who just finished playing go to the end of the queue
     final lastMatch = _history.isNotEmpty ? _history.first : null;
-    if (lastMatch != null) {
-      final playersWhoPlayed = [...lastMatch.teamA, ...lastMatch.teamB];
-      // Remove players who played from their current positions
-      _arrivalOrder.removeWhere((id) => playersWhoPlayed.contains(id));
-      // Add them back to the end
-      _arrivalOrder.addAll(playersWhoPlayed);
+
+    if (lastMatch == null) {
+      // First match: select from arrival order
+      final teamA = _arrivalOrder.take(perTeam).toList();
+      final teamB = _arrivalOrder.skip(perTeam).take(perTeam).toList();
+      final waiting = _arrivalOrder.skip(totalNeeded).toList();
+      return (teamA: teamA, teamB: teamB, waiting: waiting);
     }
 
-    // Select next teams
-    final teamA = _arrivalOrder.take(perTeam).toList();
-    final teamB = _arrivalOrder.skip(perTeam).take(perTeam).toList();
-    final waiting = _arrivalOrder.skip(totalNeeded).toList();
+    // Determine winner and loser
+    final teamAWon = lastMatch.scoreA > lastMatch.scoreB;
+    final teamBWon = lastMatch.scoreB > lastMatch.scoreA;
+    final wasTie = lastMatch.scoreA == lastMatch.scoreB;
 
-    return (teamA: teamA, teamB: teamB, waiting: waiting);
+    List<String> winningTeam;
+    List<String> losingTeam;
+    bool winnerIsTeamA;
+
+    if (wasTie) {
+      // In case of tie, treat both teams equally (rotate both)
+      final playersWhoPlayed = [...lastMatch.teamA, ...lastMatch.teamB];
+      _arrivalOrder.removeWhere((id) => playersWhoPlayed.contains(id));
+      _arrivalOrder.addAll(playersWhoPlayed);
+
+      final teamA = _arrivalOrder.take(perTeam).toList();
+      final teamB = _arrivalOrder.skip(perTeam).take(perTeam).toList();
+      final waiting = _arrivalOrder.skip(totalNeeded).toList();
+      return (teamA: teamA, teamB: teamB, waiting: waiting);
+    } else if (teamAWon) {
+      winningTeam = List.from(lastMatch.teamA);
+      losingTeam = List.from(lastMatch.teamB);
+      winnerIsTeamA = true;
+    } else {
+      winningTeam = List.from(lastMatch.teamB);
+      losingTeam = List.from(lastMatch.teamA);
+      winnerIsTeamA = false;
+    }
+
+    // Remove players who played from arrival queue
+    final playersWhoPlayed = [...lastMatch.teamA, ...lastMatch.teamB];
+    _arrivalOrder.removeWhere((id) => playersWhoPlayed.contains(id));
+
+    // Build new team from waiting players
+    List<String> newTeam = [];
+    final waitingPlayers = List<String>.from(_arrivalOrder);
+
+    // Take players from waiting list
+    for (int i = 0; i < perTeam && waitingPlayers.isNotEmpty; i++) {
+      newTeam.add(waitingPlayers.removeAt(0));
+    }
+
+    // If not enough waiting players, fill with players from losing team (in order)
+    if (newTeam.length < perTeam) {
+      final needed = perTeam - newTeam.length;
+      for (int i = 0; i < needed && i < losingTeam.length; i++) {
+        newTeam.add(losingTeam[i]);
+      }
+    }
+
+    // Add losing team to end of queue
+    _arrivalOrder.addAll(losingTeam);
+
+    // Return teams maintaining winner's position
+    if (winnerIsTeamA) {
+      return (teamA: winningTeam, teamB: newTeam, waiting: waitingPlayers);
+    } else {
+      return (teamA: newTeam, teamB: winningTeam, waiting: waitingPlayers);
+    }
   }
 
   /// Start match with specific teams (for rotation)

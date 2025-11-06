@@ -12,10 +12,34 @@ class MatchPage extends StatelessWidget {
     final state = context.appWatch();
     final match = state.currentMatch;
     final playersMap = {for (final p in state.players) p.id: p};
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Partida em Andamento')),
+      appBar: AppBar(title: const Text('Partida')),
       body: match == null
-          ? const Center(child: Text('Nenhuma partida em andamento'))
+          ? state.hasTeamsPrepared
+              ? _buildTeamsPreview(context, state, playersMap)
+              : const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.sports_soccer, size: 64, color: Colors.grey),
+                        SizedBox(height: 16),
+                        Text(
+                          'Nenhuma partida em andamento',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'Monte os times na aba "Chegada" para começar',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
           : Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
@@ -478,6 +502,150 @@ void _showFinalizeDialog(BuildContext context) {
       ],
     ),
   );
+}
+
+Widget _buildTeamsPreview(BuildContext context, AppState state, Map<String, Player> playersMap) {
+  return Padding(
+    padding: const EdgeInsets.all(16),
+    child: Column(
+      children: [
+        Card(
+          color: Theme.of(context).colorScheme.primaryContainer,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Times montados! Revise e inicie a partida.',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Expanded(
+          child: Row(
+            children: [
+              Expanded(
+                child: _TeamPreviewCard(
+                  teamLabel: 'Time A',
+                  playerIds: state.preparedTeamA!,
+                  playersMap: playersMap,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _TeamPreviewCard(
+                  teamLabel: 'Time B',
+                  playerIds: state.preparedTeamB!,
+                  playersMap: playersMap,
+                  color: Theme.of(context).colorScheme.secondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        SafeArea(
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Iniciar Partida'),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.all(16),
+              ),
+              onPressed: () {
+                try {
+                  state.startMatch();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Partida iniciada!')),
+                  );
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Erro ao iniciar partida: $e'),
+                      backgroundColor: Theme.of(context).colorScheme.error,
+                    ),
+                  );
+                }
+              },
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _TeamPreviewCard extends StatelessWidget {
+  final String teamLabel;
+  final List<String> playerIds;
+  final Map<String, Player> playersMap;
+  final Color color;
+
+  const _TeamPreviewCard({
+    required this.teamLabel,
+    required this.playerIds,
+    required this.playersMap,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.group, color: color),
+                const SizedBox(width: 8),
+                Text(
+                  teamLabel,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
+            const Divider(),
+            Expanded(
+              child: ListView.builder(
+                itemCount: playerIds.length,
+                itemBuilder: (context, index) {
+                  final player = playersMap[playerIds[index]];
+                  if (player == null) return const SizedBox.shrink();
+                  return ListTile(
+                    dense: true,
+                    leading: CircleAvatar(
+                      radius: 16,
+                      child: Text('${index + 1}'),
+                    ),
+                    title: Text(player.name),
+                    subtitle: Text(
+                      '${player.position?.name ?? 'N/A'} • ${player.level?.name ?? 'N/A'}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 void _showNextMatchDialog(
