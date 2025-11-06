@@ -165,6 +165,8 @@ class AppState extends ChangeNotifier {
       (name: 'Gabriel', pos: Position.ataque, lvl: SkillLevel.medio),
       (name: 'Bruno', pos: Position.ataque, lvl: SkillLevel.iniciante),
       (name: 'Thiago', pos: Position.defesa, lvl: SkillLevel.medio),
+      (name: 'Vinicius', pos: Position.ataque, lvl: SkillLevel.avancado),
+      (name: 'Daniel', pos: Position.goleiro, lvl: SkillLevel.iniciante),
     ];
 
     for (final s in samples) {
@@ -387,29 +389,32 @@ class AppState extends ChangeNotifier {
 
     _history.insert(0, currentMatch!);
     currentMatch = null;
+
+    // Prepare the next match automatically
+    _prepareNextMatch();
+
     _persistAll();
     notifyListeners();
   }
 
   /// Prepare next match with player rotation
-  /// Returns the teams for the next match (teamA, teamB, waitingPlayers)
   /// Winning team stays, losing team is replaced by waiting players
-  ({List<String> teamA, List<String> teamB, List<String> waiting})? prepareNextMatch() {
-    if (!hasMinPlayers) return null;
+  void _prepareNextMatch() {
+    if (!hasMinPlayers) return;
 
     final perTeam = settings.playersPerTeam;
     final totalNeeded = perTeam * 2;
 
-    if (_arrivalOrder.length < totalNeeded) return null;
+    if (_arrivalOrder.length < totalNeeded) return;
 
     final lastMatch = _history.isNotEmpty ? _history.first : null;
 
     if (lastMatch == null) {
       // First match: select from arrival order
-      final teamA = _arrivalOrder.take(perTeam).toList();
-      final teamB = _arrivalOrder.skip(perTeam).take(perTeam).toList();
-      final waiting = _arrivalOrder.skip(totalNeeded).toList();
-      return (teamA: teamA, teamB: teamB, waiting: waiting);
+      preparedTeamA = _arrivalOrder.take(perTeam).toList();
+      preparedTeamB = _arrivalOrder.skip(perTeam).take(perTeam).toList();
+      notifyListeners();
+      return;
     }
 
     // Determine winner and loser
@@ -427,10 +432,10 @@ class AppState extends ChangeNotifier {
       _arrivalOrder.removeWhere((id) => playersWhoPlayed.contains(id));
       _arrivalOrder.addAll(playersWhoPlayed);
 
-      final teamA = _arrivalOrder.take(perTeam).toList();
-      final teamB = _arrivalOrder.skip(perTeam).take(perTeam).toList();
-      final waiting = _arrivalOrder.skip(totalNeeded).toList();
-      return (teamA: teamA, teamB: teamB, waiting: waiting);
+      preparedTeamA = _arrivalOrder.take(perTeam).toList();
+      preparedTeamB = _arrivalOrder.skip(perTeam).take(perTeam).toList();
+      notifyListeners();
+      return;
     } else if (teamAWon) {
       winningTeam = List.from(lastMatch.teamA);
       losingTeam = List.from(lastMatch.teamB);
@@ -467,25 +472,12 @@ class AppState extends ChangeNotifier {
 
     // Return teams maintaining winner's position
     if (winnerIsTeamA) {
-      return (teamA: winningTeam, teamB: newTeam, waiting: waitingPlayers);
+      preparedTeamA = winningTeam;
+      preparedTeamB = newTeam;
     } else {
-      return (teamA: newTeam, teamB: winningTeam, waiting: waitingPlayers);
+      preparedTeamA = newTeam;
+      preparedTeamB = winningTeam;
     }
-  }
-
-  /// Start match with specific teams (for rotation)
-  void startMatchWithTeams(List<String> teamA, List<String> teamB) {
-    currentMatch = MatchModel(
-      id: _id(),
-      createdAt: DateTime.now(),
-      teamA: teamA,
-      teamB: teamB,
-      durationMinutes: settings.matchMinutes,
-      status: MatchStatus.emAndamento,
-      startTime: DateTime.now(),
-    );
-    _startTimer();
-    _persistAll();
     notifyListeners();
   }
 }

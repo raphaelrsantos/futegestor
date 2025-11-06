@@ -52,88 +52,93 @@ class QueuePage extends StatelessWidget {
                   ),
                 ),
                 Expanded(
-                  child: ReorderableListView.builder(
+                  child: ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: waitingPlayers.length,
-                    onReorder: (oldIndex, newIndex) {
-                      // Find the global index in arrival order
-                      final playerId = waitingPlayers[oldIndex];
-                      final globalOldIndex = arrival.indexOf(playerId);
+                    itemCount: (waitingPlayers.length / perTeam).ceil(),
+                    itemBuilder: (context, teamIndex) {
+                      final start = teamIndex * perTeam;
+                      final end = (teamIndex + 1) * perTeam;
+                      final teamPlayers = waitingPlayers.sublist(
+                        start,
+                        end > waitingPlayers.length ? waitingPlayers.length : end,
+                      );
+                      final teamNumber = teamIndex + 1;
 
-                      // Calculate the new global index
-                      int globalNewIndex;
-                      if (newIndex >= waitingPlayers.length) {
-                        // Moving to the end
-                        final lastWaitingPlayer = waitingPlayers.last;
-                        globalNewIndex = arrival.indexOf(lastWaitingPlayer);
-                      } else if (newIndex > oldIndex) {
-                        // Moving down
-                        final targetPlayer = waitingPlayers[newIndex];
-                        globalNewIndex = arrival.indexOf(targetPlayer);
+                      String title;
+                      if (teamNumber == 1) {
+                        title = 'Time 3 (próximo)';
                       } else {
-                        // Moving up
-                        final targetPlayer = waitingPlayers[newIndex];
-                        globalNewIndex = arrival.indexOf(targetPlayer);
+                        title = 'Time ${teamNumber + 2}';
                       }
 
-                      state.reorderArrival(globalOldIndex, globalNewIndex);
-                    },
-                    buildDefaultDragHandles: true,
-                    itemBuilder: (context, index) {
-                      final player = playersById[waitingPlayers[index]];
-                      if (player == null) return const SizedBox.shrink();
-
-                      final position = index + 1;
-                      final teamNumber = (index ~/ perTeam) + 1;
-                      final positionInTeam = (index % perTeam) + 1;
-
-                      // Determine team label and color
-                      final isFirstTeam = index < perTeam;
-                      final isSecondTeam = index >= perTeam && index < perTeam * 2;
-
-                      Color? cardColor;
-                      String teamLabel;
-
-                      if (isFirstTeam) {
-                        cardColor = Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3);
-                        teamLabel = 'Time 1 - Pos $positionInTeam';
-                      } else if (isSecondTeam) {
-                        cardColor = Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.3);
-                        teamLabel = 'Time 2 - Pos $positionInTeam';
-                      } else {
-                        teamLabel = 'Time $teamNumber - Pos $positionInTeam';
-                      }
-
-                      return Card(
-                        key: ValueKey(player.id),
-                        margin: const EdgeInsets.only(bottom: 8),
-                        color: cardColor,
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            child: Text('$position'),
-                          ),
-                          title: Text(player.name),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(_subtitleFor(player)),
-                              Text(
-                                teamLabel,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                      return _TeamCard(
+                        title: title,
+                        players: teamPlayers.map((id) => playersById[id]!).toList(),
                       );
                     },
                   ),
                 ),
               ],
             ),
+    );
+  }
+
+  String _subtitleFor(Player p) {
+    final pos = p.position?.name ?? 'Sem posição';
+    final lvl = p.level?.name ?? 'Sem nível';
+    return '$pos · $lvl';
+  }
+}
+
+class _TeamCard extends StatelessWidget {
+  final String title;
+  final List<Player> players;
+
+  const _TeamCard({required this.title, required this.players});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const Divider(),
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: players.length,
+              itemBuilder: (context, index) {
+                return _PlayerTile(player: players[index], position: index + 1);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PlayerTile extends StatelessWidget {
+  final Player player;
+  final int position;
+
+  const _PlayerTile({required this.player, required this.position});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: CircleAvatar(
+        child: Text('$position'),
+      ),
+      title: Text(player.name),
+      subtitle: Text(_subtitleFor(player)),
     );
   }
 
